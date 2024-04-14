@@ -1,0 +1,17 @@
+<?xml version="1.0"?>
+<opencv_storage>
+<calibration_date>"2024-04-14"</calibration_date>
+<camera_matrix>
+  <fx>6.2758768190631172e+03</fx>
+  <fy>6.2747929803502429e+03</fy>
+  <cx>2.0015900320239487e+03</cx>
+  <cy>1.3052506803991089e+03</cy></camera_matrix>
+<distortion_coefficients>
+  <k1>2.3035455883966649e-01</k1>
+  <k2>-1.2453997566960591e+00</k2>
+  <k3>2.0025084750559592e+00</k3>
+  <p1>1.0009128484326120e-03</p1>
+  <p2>2.8505516291011577e-03</p2></distortion_coefficients>
+<image_height>3976</image_height>
+<image_width>2652</image_width>
+</opencv_storage>
