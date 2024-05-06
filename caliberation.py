@@ -1,20 +1,15 @@
 ###Viktoria Dergunova
-# TODO: CV_CALIB_FIX_ASPECT_RATIO
 import glob
 from datetime import datetime
 import cv2 as cv
 import matplotlib.pyplot as plt
 import numpy as np
+from scipy.spatial import Voronoi, voronoi_plot_2d
 
 chessboardSize = (17, 28)  # -1
 frameSize = (3976, 2652)
 
 #####CALIBERATION######
-
-# Termination criteria
-# num of iteration: increase -> more refined results
-# num of epsilon: drecrease -> tightens the convergence criteria,refines the corner locations to a finer accuracy
-
 criteria = (cv.TERM_CRITERIA_EPS + cv.TERM_CRITERIA_MAX_ITER, 30, 0.001)
 
 objp = np.zeros((chessboardSize[0] * chessboardSize[1], 3), np.float32)
@@ -25,38 +20,29 @@ objp *= size_of_chessboard_squares_mm
 objpoints = []  # 3D point in real world space
 imgpoints = []  # 2D points in image plane
 
-images = glob.glob("test/*.jpg")  ##PATH
-# images = glob.glob('links_8bit_jpg_DS_0.5/*.jpg') ##PATH
+# images = glob.glob("test/*.jpg")  ##PATH
+images = glob.glob("links_8bit_jpg_DS_0.5/*.jpg")  ##PATH
 
 for image in images:
     img = cv.imread(image)
+    if img is None:
+        print(f"Failed to load image {image}")
+        continue
+
     gray = cv.cvtColor(img, cv.COLOR_BGR2GRAY)
-
-    # gray = cv.equalizeHist(gray)  # Equalize histogram to enhance contrast
-    # gray = cv.GaussianBlur(gray, (5, 5), 0) #Reduce noise
-
     ret, corners = cv.findChessboardCorners(gray, chessboardSize, None)
-    # links: 0.39 pixels away from corresponding observed points
+
     if ret:
         objpoints.append(objp)
-        # subpixel
         corners2 = cv.cornerSubPix(gray, corners, (11, 11), (-1, -1), criteria)
-        imgpoints.append(corners)
-
-        cv.drawChessboardCorners(img, chessboardSize, corners2, ret)
-        cv.imshow("img", img)
-        cv.waitKey(1000)
-
-cv.destroyAllWindows()
+        imgpoints.append(corners2)
+    else:
+        print(f"Chessboard corners not detected in {image}")
+        cv.waitKey(6000)
 
 ret, cameraMatrix, dist, rvecs, tvecs = cv.calibrateCamera(
     objpoints, imgpoints, frameSize, None, None
 )
-print("RMS:", ret)
-
-
-# print("Distortion Coefficients Shape:", dist.shape)
-# print("Distortion Coefficients:", dist)
 
 # WRITE XML
 current_date = datetime.now().strftime("%Y-%m-%d")
@@ -93,31 +79,6 @@ print("Camera matrix:\n", cameraMatrix)
 print("Distortion coefficients:\n", dist.flatten())
 
 
-def calculate_reprojection_error_components(
-    objpoints, imgpoints, cameraMatrix, rvecs, tvecs, dist
-):
-    error_x_components = []
-    error_y_components = []
-
-    for i in range(len(objpoints)):
-        imgpoints2, _ = cv.projectPoints(
-            objpoints[i], rvecs[i], tvecs[i], cameraMatrix, dist
-        )
-        imgpoints2 = imgpoints2.reshape(-1, 2)
-        observed_points = imgpoints[i].reshape(-1, 2)
-
-        error_x = observed_points[:, 0] - imgpoints2[:, 0]
-        error_y = observed_points[:, 1] - imgpoints2[:, 1]
-
-        error_x_components.append(error_x)
-        error_y_components.append(error_y)
-
-    return error_x_components, error_y_components
-
-
-####CALCULATE RPE####
-
-
 def calculate_mean_reprojection_error_per_image(
     objpoints, imgpoints, cameraMatrix, rvecs, tvecs, dist
 ):
@@ -135,74 +96,64 @@ def calculate_mean_reprojection_error_per_image(
         # print(f"First few errors", errors)
 
     mean_error = mean_error / len(objpoints)
-    # print(np.shape(objpoints)) #475, len 4
     return mean_errors_per_image, mean_error
 
 
-def calculate_reprojection_errors_alternative(
-    objpoints, imgpoints, cameraMatrix, rvecs, tvecs, dist
-):
+def calculate_reprojection_errors_alternative(objpoints, imgpoints, cameraMatrix, rvecs, tvecs, dist):
+    # Similar to the provided function body
     total_error = 0
     total_points = 0
     error_x_components = []
     error_y_components = []
     individual_errors = []
+    coordinates = []
 
     for i in range(len(objpoints)):
-        imgpoints2, _ = cv.projectPoints(
-            objpoints[i], rvecs[i], tvecs[i], cameraMatrix, dist
-        )
+        imgpoints2, _ = cv.projectPoints(objpoints[i], rvecs[i], tvecs[i], cameraMatrix, dist)
         imgpoints2 = imgpoints2.reshape(-1, 2)
         observed_points = imgpoints[i].reshape(-1, 2)
 
-        # Calculate x and y error components
         error_x = observed_points[:, 0] - imgpoints2[:, 0]
         error_y = observed_points[:, 1] - imgpoints2[:, 1]
         error_x_components.extend(error_x)
         error_y_components.extend(error_y)
 
-        # Calculate the norm for each point's error
         errors = np.linalg.norm(observed_points - imgpoints2, axis=1)
-
-        # print(f"Shape of imgpoints2: {imgpoints2.shape}")
-        # print(f"Shape of observed_points: {observed_points.shape}")
-        # print(f"First few errors: {errors[:5]}")
+        individual_errors.append(errors)
+        coordinates.extend(observed_points.tolist())  # Ensure list of lists structure for coordinates
 
         total_error += np.sum(errors)
         total_points += len(errors)
-        individual_errors.append(errors)
 
     mean_error = total_error / total_points if total_points != 0 else 0
+    coordinates = np.array(coordinates)  # Convert coordinates to a NumPy array for plotting
 
-    print(individual_errors)
-    return error_x_components, error_y_components, individual_errors, mean_error
+    return coordinates, error_x_components, error_y_components, individual_errors, mean_error
 
 
 ####VISUALIZATION####
 def plot_residual_errors(mean_errors_per_image, mean_error):
     fig, ax = plt.subplots()
-    # Create the scatter plot for individual mean reprojection errors per image
-    ax.scatter(
+    ax.plot(
         range(len(mean_errors_per_image)),
         mean_errors_per_image,
+        marker="o",
+        linestyle="-",
+        color="b",
         label="Individual Reprojection Error for an Image",
     )
-    # Add a horizontal line for the overall mean error
-    ax.axhline(mean_error, color="r", linestyle="-", label="Overall Mean Error")
-    # Add labels and title
+    ax.axhline(mean_error, color="r", linestyle="--", label="Overall Mean Error")
     ax.set_xlabel("Image Index")
     ax.set_ylabel("Mean Reprojection Error in Pixels")
     ax.set_title("Mean Reprojection Error per Image (OpenCV)")
-    # Add legend
     ax.legend()
-    plt.savefig("residual_plot_rpe.png")
-    # Show the plot
+    plt.savefig("residual_plot_rpe_line.png")
+
     plt.show()
 
 
 def visualize_points_and_errors(objpoints, imgpoints, cameraMatrix, rvecs, tvecs, dist):
     for i in range(len(objpoints)):
-        # Projizierte Punkte berechnen
         imgpoints2, _ = cv.projectPoints(
             objpoints[i], rvecs[i], tvecs[i], cameraMatrix, dist
         )
@@ -266,62 +217,109 @@ def visualize_points_and_errors(objpoints, imgpoints, cameraMatrix, rvecs, tvecs
 
 
 # CALL FUNCTIONS
-visualize_points_and_errors(objpoints, imgpoints, cameraMatrix, rvecs, tvecs, dist)
-
 opencv, mean_error = calculate_mean_reprojection_error_per_image(
     objpoints, imgpoints, cameraMatrix, rvecs, tvecs, dist
 )
-x_components, y_components, individual_errors, mean_error2 = (
-    calculate_reprojection_errors_alternative(
-        objpoints, imgpoints, cameraMatrix, rvecs, tvecs, dist
-    )
+
+coordinates, error_x_components, error_y_components, individual_errors, mean_error2 = calculate_reprojection_errors_alternative(
+    objpoints, imgpoints, cameraMatrix, rvecs, tvecs, dist
 )
-
-
 print("Mean Reprojection Error:", mean_error2)
 print("OpenCV2 Mean RPE:", mean_error)
 print("RMS:", ret)
 
 
 plot_residual_errors(opencv, mean_error)
-visualize_points_and_errors(objpoints, imgpoints, cameraMatrix, rvecs, tvecs, dist)
+# visualize_points_and_errors(objpoints, imgpoints, cameraMatrix, rvecs, tvecs, dist)
 
 
-error_x_components, error_y_components, _, _ = (
-    calculate_reprojection_errors_alternative(
-        objpoints, imgpoints, cameraMatrix, rvecs, tvecs, dist
-    )
-)
+""" plt.figure(figsize=(8, 6))
+plt.plot(
+    images, opencv, marker="o", linestyle="-", color="b"
+)  # Blue line with circle markers
+plt.title("Plot of Mean Reprojection Error with Different Number of Images")
+plt.xlabel("Number of Images")
+plt.ylabel("Mean Reprojection Error")
+plt.xticks(images)
+plt.grid(True)
+ """
 
-plt.figure(figsize=(8, 6))
-plt.hist2d(error_x_components, error_y_components, bins=30, cmap="Blues")
-plt.colorbar(label="Count")
-plt.title("Histogram of Reprojection Errors")
-plt.xlabel("Error X (pixels)")
-plt.ylabel("Error Y (pixels)")
-plt.show()
+def plot_error_norm_distribution(individual_errors):
+    # Flatten the list of arrays to get a single array of all error norms
+    all_error_norms = np.concatenate(individual_errors)
 
-def visualize_reprojection_errors_log_scale(error_x_components, error_y_components):
-    plt.figure(figsize=(10, 6))
-    
-    error_x = np.concatenate(error_x_components)
-    error_y = np.concatenate(error_y_components)
-
-    error_vectors = np.vstack((error_x, error_y)).T
-    error_magnitude = np.linalg.norm(error_vectors, axis=1)
-    error_direction = np.arctan2(error_y, error_x)
-
-    # Apply a logarithmic scale to error magnitude; add a small constant to avoid log(0)
-    error_magnitude_log = np.log10(error_magnitude + 1e-10)
-
-    scatter = plt.scatter(error_x, error_y, c=error_direction, cmap='hsv', alpha=0.75, 
-                          s=10 * (error_magnitude_log / error_magnitude_log.max()))
-    plt.colorbar(scatter, label='Error Direction (Radians)')
-    plt.title('Log-Scaled Reprojection Error Directions')
-    plt.xlabel('Error X Component (pixels)')
-    plt.ylabel('Error Y Component (pixels)')
+    plt.figure(figsize=(6, 4))
+    plt.hist(all_error_norms, bins=30, color="blue")
+    plt.title("Histogram of Reprojection Error Magnitudes")
+    plt.xlabel("Error Norm (pixels)")
+    plt.ylabel("Count")
     plt.grid(True)
-    plt.axis('equal')
     plt.show()
 
-visualize_reprojection_errors_log_scale(error_x_components, error_y_components)
+
+plot_error_norm_distribution(individual_errors)
+
+
+def plot_error_heatmap(coordinates, individual_errors):
+    all_coords = np.vstack(coordinates)
+    all_errors = np.concatenate(individual_errors)
+    # print(all_errors)
+
+    assert (
+        all_coords.ndim == 2 and all_coords.shape[1] == 2
+    ), "Coordinates array must be 2D with two columns"
+
+    plt.figure(figsize=(10, 8))
+    heatmap, xedges, yedges = np.histogram2d(
+        all_coords[:, 0], all_coords[:, 1], bins=100, weights=all_errors, density=True
+    )
+    plt.imshow(
+        heatmap.T,
+        extent=[xedges[0], xedges[-1], yedges[0], yedges[-1]],
+        origin="lower",
+        cmap="hot",
+        interpolation="nearest",
+    )
+    plt.colorbar(label="Error Magnitude")
+    plt.title("Distribution of Reprojection Error Magnitudes over all Images")
+    plt.xlabel("X Coordinate (pixel)")
+    plt.ylabel("Y Coordinate (pixel)")
+    plt.show()
+
+
+plot_error_heatmap(coordinates, individual_errors)
+
+def plot_error_directions_and_magnitudes(coordinates, error_x_components, error_y_components):
+    angles = np.arctan2(error_y_components, error_x_components)
+    magnitudes = np.sqrt(np.square(error_x_components) + np.square(error_y_components))
+
+    vor = Voronoi(coordinates)
+
+    fig, axs = plt.subplots(1, 2, figsize=(16, 8))
+
+    # Error Directions
+    voronoi_plot_2d(vor, ax=axs[0], show_vertices=False, show_points=False)
+    for region, angle in zip(vor.point_region, angles):
+        region_idx = vor.regions[region]
+        if -1 not in region_idx:
+            polygon = [vor.vertices[i] for i in region_idx]
+            color = plt.cm.hsv((angle + np.pi) / (2 * np.pi))
+            axs[0].fill(*zip(*polygon), color=color)
+    axs[0].set_title("Error Direction Diagram over all Images")
+
+    # Error Magnitudes
+    norm = plt.Normalize(vmin=min(magnitudes), vmax=max(magnitudes))
+    voronoi_plot_2d(vor, ax=axs[1], show_vertices=False, show_points=False)
+    for region, magnitude in zip(vor.point_region, magnitudes):
+        region_idx = vor.regions[region]
+        if -1 not in region_idx:
+            polygon = [vor.vertices[i] for i in region_idx]
+            color = plt.cm.viridis(norm(magnitude))
+            axs[1].fill(*zip(*polygon), color=color)
+    axs[1].set_title("Error Magnitude Diagram over all Images")
+
+    plt.colorbar(plt.cm.ScalarMappable(norm=norm, cmap='viridis'), ax=axs[1], orientation='vertical')
+    plt.show()
+
+
+plot_error_directions_and_magnitudes(coordinates, error_x_components, error_y_components)
