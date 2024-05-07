@@ -99,7 +99,9 @@ def calculate_mean_reprojection_error_per_image(
     return mean_errors_per_image, mean_error
 
 
-def calculate_reprojection_errors_alternative(objpoints, imgpoints, cameraMatrix, rvecs, tvecs, dist):
+def calculate_reprojection_errors_alternative(
+    objpoints, imgpoints, cameraMatrix, rvecs, tvecs, dist
+):
     # Similar to the provided function body
     total_error = 0
     total_points = 0
@@ -109,7 +111,9 @@ def calculate_reprojection_errors_alternative(objpoints, imgpoints, cameraMatrix
     coordinates = []
 
     for i in range(len(objpoints)):
-        imgpoints2, _ = cv.projectPoints(objpoints[i], rvecs[i], tvecs[i], cameraMatrix, dist)
+        imgpoints2, _ = cv.projectPoints(
+            objpoints[i], rvecs[i], tvecs[i], cameraMatrix, dist
+        )
         imgpoints2 = imgpoints2.reshape(-1, 2)
         observed_points = imgpoints[i].reshape(-1, 2)
 
@@ -120,15 +124,25 @@ def calculate_reprojection_errors_alternative(objpoints, imgpoints, cameraMatrix
 
         errors = np.linalg.norm(observed_points - imgpoints2, axis=1)
         individual_errors.append(errors)
-        coordinates.extend(observed_points.tolist())  # Ensure list of lists structure for coordinates
+        coordinates.extend(
+            observed_points.tolist()
+        )  # Ensure list of lists structure for coordinates
 
         total_error += np.sum(errors)
         total_points += len(errors)
 
     mean_error = total_error / total_points if total_points != 0 else 0
-    coordinates = np.array(coordinates)  # Convert coordinates to a NumPy array for plotting
+    coordinates = np.array(
+        coordinates
+    )  # Convert coordinates to a NumPy array for plotting
 
-    return coordinates, error_x_components, error_y_components, individual_errors, mean_error
+    return (
+        coordinates,
+        error_x_components,
+        error_y_components,
+        individual_errors,
+        mean_error,
+    )
 
 
 ####VISUALIZATION####
@@ -221,8 +235,10 @@ opencv, mean_error = calculate_mean_reprojection_error_per_image(
     objpoints, imgpoints, cameraMatrix, rvecs, tvecs, dist
 )
 
-coordinates, error_x_components, error_y_components, individual_errors, mean_error2 = calculate_reprojection_errors_alternative(
-    objpoints, imgpoints, cameraMatrix, rvecs, tvecs, dist
+coordinates, error_x_components, error_y_components, individual_errors, mean_error2 = (
+    calculate_reprojection_errors_alternative(
+        objpoints, imgpoints, cameraMatrix, rvecs, tvecs, dist
+    )
 )
 print("Mean Reprojection Error:", mean_error2)
 print("OpenCV2 Mean RPE:", mean_error)
@@ -244,6 +260,7 @@ plt.xticks(images)
 plt.grid(True)
  """
 
+
 def plot_error_norm_distribution(individual_errors):
     # Flatten the list of arrays to get a single array of all error norms
     all_error_norms = np.concatenate(individual_errors)
@@ -251,7 +268,7 @@ def plot_error_norm_distribution(individual_errors):
     plt.figure(figsize=(6, 4))
     plt.hist(all_error_norms, bins=30, color="blue")
     plt.title("Histogram of Reprojection Error Magnitudes")
-    plt.xlabel("Error Norm (pixels)")
+    plt.xlabel("RPE")
     plt.ylabel("Count")
     plt.grid(True)
     plt.show()
@@ -289,37 +306,45 @@ def plot_error_heatmap(coordinates, individual_errors):
 
 plot_error_heatmap(coordinates, individual_errors)
 
-def plot_error_directions_and_magnitudes(coordinates, error_x_components, error_y_components):
+
+def plot_error_directions(
+    coordinates, error_x_components, error_y_components
+):
+    # Convert lists to numpy arrays if they are not already
+    coordinates = np.array(coordinates)
+    error_x_components = np.array(error_x_components)
+    error_y_components = np.array(error_y_components)
+
+    # Check if the arrays are empty
+    if (
+        coordinates.size == 0
+        or error_x_components.size == 0
+        or error_y_components.size == 0
+    ):
+        print("Input data arrays are empty.")
+        return
+
     angles = np.arctan2(error_y_components, error_x_components)
-    magnitudes = np.sqrt(np.square(error_x_components) + np.square(error_y_components))
+    try:
+        vor = Voronoi(coordinates)
+        fig, axs = plt.subplots(1, 2, figsize=(16, 8))
 
-    vor = Voronoi(coordinates)
+        # Plot Error Directions
+        voronoi_plot_2d(vor, ax=axs[0], show_vertices=False, show_points=False)
+        for region, angle in zip(vor.point_region, angles):
+            region_idx = vor.regions[region]
+            if -1 not in region_idx:
+                polygon = [vor.vertices[i] for i in region_idx]
+                color = plt.cm.hsv((angle + np.pi) / (2 * np.pi))
+                axs[0].fill(*zip(*polygon), color=color, edgecolor="none", linewidth=0)
+        axs[0].set_title("Error Direction Diagram over all Images")
+        axs[0].set_axis_off()
+        plt.show()
 
-    fig, axs = plt.subplots(1, 2, figsize=(16, 8))
-
-    # Error Directions
-    voronoi_plot_2d(vor, ax=axs[0], show_vertices=False, show_points=False)
-    for region, angle in zip(vor.point_region, angles):
-        region_idx = vor.regions[region]
-        if -1 not in region_idx:
-            polygon = [vor.vertices[i] for i in region_idx]
-            color = plt.cm.hsv((angle + np.pi) / (2 * np.pi))
-            axs[0].fill(*zip(*polygon), color=color)
-    axs[0].set_title("Error Direction Diagram over all Images")
-
-    # Error Magnitudes
-    norm = plt.Normalize(vmin=min(magnitudes), vmax=max(magnitudes))
-    voronoi_plot_2d(vor, ax=axs[1], show_vertices=False, show_points=False)
-    for region, magnitude in zip(vor.point_region, magnitudes):
-        region_idx = vor.regions[region]
-        if -1 not in region_idx:
-            polygon = [vor.vertices[i] for i in region_idx]
-            color = plt.cm.viridis(norm(magnitude))
-            axs[1].fill(*zip(*polygon), color=color)
-    axs[1].set_title("Error Magnitude Diagram over all Images")
-
-    plt.colorbar(plt.cm.ScalarMappable(norm=norm, cmap='viridis'), ax=axs[1], orientation='vertical')
-    plt.show()
+    except Exception as e:
+        print(f"An error occurred: {e}")
 
 
-plot_error_directions_and_magnitudes(coordinates, error_x_components, error_y_components)
+plot_error_directions(
+    coordinates, error_x_components, error_y_components
+)
