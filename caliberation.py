@@ -20,8 +20,9 @@ objp *= size_of_chessboard_squares_mm
 objpoints = []  # 3D point in real world space
 imgpoints = []  # 2D points in image plane
 
-# images = glob.glob("test/*.jpg")  ##PATH
-images = glob.glob("links_8bit_jpg_DS_0.5/*.jpg")  ##PATH
+images = glob.glob("test/*.jpg")  ##PATH
+# images = glob.glob("links_8bit_jpg_DS_0.5/*.jpg")  ##PATH
+# print(len(images))
 
 for image in images:
     img = cv.imread(image)
@@ -36,6 +37,10 @@ for image in images:
         objpoints.append(objp)
         corners2 = cv.cornerSubPix(gray, corners, (11, 11), (-1, -1), criteria)
         imgpoints.append(corners2)
+        cv.drawChessboardCorners(img, chessboardSize, corners2, ret)
+        cv.imshow("img", img)
+        cv.waitKey(500)
+
     else:
         print(f"Chessboard corners not detected in {image}")
         cv.waitKey(6000)
@@ -307,15 +312,11 @@ def plot_error_heatmap(coordinates, individual_errors):
 plot_error_heatmap(coordinates, individual_errors)
 
 
-def plot_error_directions(
-    coordinates, error_x_components, error_y_components
-):
-    # Convert lists to numpy arrays if they are not already
+def plot_error_directions(coordinates, error_x_components, error_y_components):
     coordinates = np.array(coordinates)
     error_x_components = np.array(error_x_components)
     error_y_components = np.array(error_y_components)
 
-    # Check if the arrays are empty
     if (
         coordinates.size == 0
         or error_x_components.size == 0
@@ -329,7 +330,6 @@ def plot_error_directions(
         vor = Voronoi(coordinates)
         fig, axs = plt.subplots(1, 2, figsize=(16, 8))
 
-        # Plot Error Directions
         voronoi_plot_2d(vor, ax=axs[0], show_vertices=False, show_points=False)
         for region, angle in zip(vor.point_region, angles):
             region_idx = vor.regions[region]
@@ -345,6 +345,107 @@ def plot_error_directions(
         print(f"An error occurred: {e}")
 
 
-plot_error_directions(
-    coordinates, error_x_components, error_y_components
+plot_error_directions(coordinates, error_x_components, error_y_components)
+
+### ANALYSIS ON UNDISTORT IMG
+# TODO: Check corner detection!!! :(
+
+
+# alpha=1 pixels are retained with some extra black images
+def undistort_image(image_path, cameraMatrix, dist):
+    img = cv.imread(image_path)
+    h, w = img.shape[:2]
+    newCameraMatrix, roi = cv.getOptimalNewCameraMatrix(
+        cameraMatrix, dist, (w, h), 1, (w, h)
+    )
+    undistorted_img = cv.undistort(img, cameraMatrix, dist, None, newCameraMatrix)
+    return undistorted_img, newCameraMatrix
+
+
+def calculate_distances(corners, chessboard_size):
+    distances = []
+    # horizontal distances
+    for row in range(chessboard_size[1]):
+        for col in range(chessboard_size[0] - 1):
+            idx = row * chessboard_size[0] + col
+            dist = np.linalg.norm(corners[idx] - corners[idx + 1])
+            distances.append(dist)
+    # vertical distances
+    for col in range(chessboard_size[0]):
+        for row in range(chessboard_size[1] - 1):
+            idx = row * chessboard_size[0] + col
+            dist = np.linalg.norm(corners[idx] - corners[idx + chessboard_size[0]])
+            distances.append(dist)
+    return distances
+
+
+def visualize_corners(image, corners):
+    img = image.copy()
+    if corners is not None:
+        for i in range(corners.shape[0]):
+            cv.circle(img, tuple(corners[i, 0].astype(int)), 5, (0, 255, 0), -1)
+    cv.imshow("Chessboard Corners", img)
+    cv.waitKey(0)
+    cv.destroyAllWindows()
+
+
+def plot_distances(distances):
+    plt.figure()
+    plt.hist(distances, bins=20, color="blue", alpha=0.7)
+    plt.title("Distribution of Distances Between Chessboard Corners")
+    plt.xlabel("Distance (pixels)")
+    plt.ylabel("Frequency")
+    plt.grid(True)
+    plt.show()
+
+    plt.figure()
+    plt.scatter(range(len(distances)), distances, color="red")
+    plt.title("Scatter Plot of Distances")
+    plt.xlabel("Index")
+    plt.ylabel("Distance (pixels)")
+    plt.grid(True)
+    plt.show()
+
+
+def visualize_distances_on_chessboard(image, corners, chessboard_size):
+    img = image.copy()
+    font = cv.FONT_HERSHEY_SIMPLEX
+    for i in range(chessboard_size[1]):
+        for j in range(chessboard_size[0] - 1):
+            start_point = tuple(int(x) for x in corners[i * chessboard_size[0] + j][0])
+            end_point = tuple(
+                int(x) for x in corners[i * chessboard_size[0] + j + 1][0]
+            )
+            distance = np.linalg.norm(np.array(start_point) - np.array(end_point))
+            midpoint = (
+                (start_point[0] + end_point[0]) // 2,
+                (start_point[1] + end_point[1]) // 2,
+            )
+            cv.line(img, start_point, end_point, (0, 255, 0), 2)
+            cv.putText(img, f"{distance:.2f}", midpoint, font, 0.5, (255, 255, 255), 1)
+    plt.figure(figsize=(12, 8))
+    plt.imshow(cv.cvtColor(img, cv.COLOR_BGR2RGB))
+    plt.title("Visualized Distances on Chessboard")
+    plt.axis("off")
+    plt.show()
+
+
+undistorted_img, newCameraMatrix = undistort_image(
+    "links_8bit_jpg_DS_0.5/DSC00029_DS_0.5.jpg", cameraMatrix, dist
 )
+ret, corners = cv.findChessboardCorners(
+    cv.cvtColor(undistorted_img, cv.COLOR_BGR2GRAY), (17, 28)
+)
+criteria = (cv.TERM_CRITERIA_EPS + cv.TERM_CRITERIA_MAX_ITER, 30, 0.001)
+corners2 = cv.cornerSubPix(gray, corners, (11, 11), (-1, -1), criteria)
+
+if corners is not None:
+    distances = calculate_distances(corners2, (17, 28))
+    print("Mean distance:", np.mean(distances))
+    print("Standard deviation:", np.std(distances))
+    plot_distances(distances)
+else:
+    print("Chessboard corners could not be detected.")
+
+# visualize_corners(undistorted_img, corners2)
+visualize_distances_on_chessboard(undistorted_img, corners, (17, 28))
