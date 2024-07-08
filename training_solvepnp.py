@@ -176,7 +176,7 @@ def collect_parameters_kfold_iterative(images, n_splits=5):
     for train_size in range(1, total_images + 1):
         if train_size < n_splits:
             continue 
-        
+
         current_train_imgs = images[:train_size]
         num_images_list.append(len(current_train_imgs))
         
@@ -249,48 +249,58 @@ dist_train = [result["dist"] for result in train_results]
 dist_test = [result["dist"] for result in test_results]
 
 #plot
-fig, axs = plt.subplots(5, 1, figsize=(14, 30))
+fig, axs = plt.subplots(9, 1, figsize=(14, 54))
 
 axs[0].plot(num_images_list, fx_train, 'o-', label='fx Train')
 axs[0].plot(num_images_list, fx_test, 'x--', label='fx Test')
-axs[0].plot(num_images_list, fy_train, 'o-', label='fy Train')
-axs[0].plot(num_images_list, fy_test, 'x--', label='fy Test')
 axs[0].set_xlabel("Number of Training Images")
 axs[0].set_ylabel("Parameter Value")
-axs[0].set_title("Learning Curves for fx and fy")
+axs[0].set_title("Learning Curves for fx")
 axs[0].legend()
 
-axs[1].plot(num_images_list, cx_train, 'o-', label='cx Train')
-axs[1].plot(num_images_list, cx_test, 'x--', label='cx Test')
-axs[1].plot(num_images_list, cy_train, 'o-', label='cy Train')
-axs[1].plot(num_images_list, cy_test, 'x--', label='cy Test')
+axs[1].plot(num_images_list, fy_train, 'o-', label='fy Train')
+axs[1].plot(num_images_list, fy_test, 'x--', label='fy Test')
 axs[1].set_xlabel("Number of Training Images")
 axs[1].set_ylabel("Parameter Value")
-axs[1].set_title("Learning Curves for cx and cy")
+axs[1].set_title("Learning Curves for fy")
 axs[1].legend()
 
-axs[2].plot(num_images_list, [rv[0] for rv in rvecs_train], 'o-', label='rvecs Train')
-axs[2].plot(num_images_list, [rv[0] for rv in rvecs_test], 'x--', label='rvecs Test')
+axs[2].plot(num_images_list, cx_train, 'o-', label='cx Train')
+axs[2].plot(num_images_list, cx_test, 'x--', label='cx Test')
 axs[2].set_xlabel("Number of Training Images")
-axs[2].set_ylabel("Rotation Vector Value")
-axs[2].set_title("Learning Curves for Rotation Vectors")
+axs[2].set_ylabel("Parameter Value")
+axs[2].set_title("Learning Curves for cx")
 axs[2].legend()
 
-axs[3].plot(num_images_list, [tv[0] for tv in tvecs_train], 'o-', label='tvecs Train')
-axs[3].plot(num_images_list, [tv[0] for tv in tvecs_test], 'x--', label='tvecs Test')
+axs[3].plot(num_images_list, cy_train, 'o-', label='cy Train')
+axs[3].plot(num_images_list, cy_test, 'x--', label='cy Test')
 axs[3].set_xlabel("Number of Training Images")
-axs[3].set_ylabel("Translation Vector Value")
-axs[3].set_title("Learning Curves for Translation Vectors")
+axs[3].set_ylabel("Parameter Value")
+axs[3].set_title("Learning Curves for cy")
 axs[3].legend()
+
+axs[4].plot(num_images_list, [rv[0] for rv in rvecs_train], 'o-', label='rvecs Train')
+axs[4].plot(num_images_list, [rv[0] for rv in rvecs_test], 'x--', label='rvecs Test')
+axs[4].set_xlabel("Number of Training Images")
+axs[4].set_ylabel("Rotation Vector Value")
+axs[4].set_title("Learning Curves for Rotation Vectors")
+axs[4].legend()
+
+axs[5].plot(num_images_list, [tv[0] for tv in tvecs_train], 'o-', label='tvecs Train')
+axs[5].plot(num_images_list, [tv[0] for tv in tvecs_test], 'x--', label='tvecs Test')
+axs[5].set_xlabel("Number of Training Images")
+axs[5].set_ylabel("Translation Vector Value")
+axs[5].set_title("Learning Curves for Translation Vectors")
+axs[5].legend()
 
 dist_labels = ["k1", "k2", "p1", "p2", "k3"]
 for i in range(5):
-    axs[4].plot(num_images_list, [d[i] for d in dist_train], 'o-', label=f'{dist_labels[i]} Train')
-    axs[4].plot(num_images_list, [d[i] for d in dist_test], 'x--', label=f'{dist_labels[i]} Test')
-axs[4].set_xlabel("Number of Training Images")
-axs[4].set_ylabel("Distortion Coefficient Value")
-axs[4].set_title("Learning Curves for Distortion Coefficients")
-axs[4].legend()
+    axs[6 + i].plot(num_images_list, [d[i] for d in dist_train], 'o-', label=f'{dist_labels[i]} Train')
+    axs[6 + i].plot(num_images_list, [d[i] for d in dist_test], 'x--', label=f'{dist_labels[i]} Test')
+    axs[6 + i].set_xlabel("Number of Training Images")
+    axs[6 + i].set_ylabel("Distortion Coefficient Value")
+    axs[6 + i].set_title(f"Learning Curves for {dist_labels[i]}")
+    axs[6 + i].legend()
 
 plt.tight_layout()
 plt.show()
