@@ -106,8 +106,7 @@ def calculate_mean_reprojection_error_per_image(
 
 def calculate_reprojection_errors_alternative(
     objpoints, imgpoints, cameraMatrix, rvecs, tvecs, dist
-):
-    # Similar to the provided function body
+)
     total_error = 0
     total_points = 0
     error_x_components = []
@@ -131,7 +130,7 @@ def calculate_reprojection_errors_alternative(
         individual_errors.append(errors)
         coordinates.extend(
             observed_points.tolist()
-        )  # Ensure list of lists structure for coordinates
+        )
 
         total_error += np.sum(errors)
         total_points += len(errors)
@@ -139,7 +138,7 @@ def calculate_reprojection_errors_alternative(
     mean_error = total_error / total_points if total_points != 0 else 0
     coordinates = np.array(
         coordinates
-    )  # Convert coordinates to a NumPy array for plotting
+    )
 
     return (
         coordinates,
@@ -208,7 +207,6 @@ def visualize_points_and_errors(objpoints, imgpoints, cameraMatrix, rvecs, tvecs
             label="Undistorted Points",
         )
 
-        # Zeichne Linien zwischen den Punkten
         for op, pp, up in zip(observed_points, imgpoints2, undistorted_points):
             plt.plot(
                 [op[0], pp[0]],
