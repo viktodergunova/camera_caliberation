@@ -18,7 +18,7 @@ objp[:, :2] = np.mgrid[0 : chessboardSize[0], 0 : chessboardSize[1]].T.reshape(-
 objp *= size_of_chessboard_squares_mm
 
 all_images = glob.glob("./data/test/*.jpg")
-#all_images = glob.glob("./data/rechts_8bit_jpg_DS_0.5/*.jpg")
+#all_images = glob.glob("./data/links_8bit_jpg_DS_0.5/*.jpg")
 
 # all_images = glob.glob("./data/links_8bit_jpg/*.jpg")
 # all_images = glob.glob("./data/rechts_8bit_jpg/*.jpg")
@@ -161,21 +161,18 @@ def compare_rpe(train_errors, test_errors, degree=None, interpolation=False):
 # compare_rpe(fold_train_errors, fold_test_errors, interpolation=True)
 
 ###LEARNING CURVE - KFOLD, TRAIN, TEST###
-import numpy as np
-import matplotlib.pyplot as plt
-from sklearn.model_selection import KFold
 
-def collect_parameters_kfold_iterative(images, n_splits=5):
+def collect_parameters_kfold_iterative(images, n_splits=2):
     kf = KFold(n_splits=n_splits, shuffle=True, random_state=42)
     total_images = len(images)
     num_images_list = []
     train_results = []
     test_results = []
 
-   #iterative
+    # Iterative collection
     for train_size in range(1, total_images + 1):
         if train_size < n_splits:
-            continue 
+            continue
 
         current_train_imgs = images[:train_size]
         num_images_list.append(len(current_train_imgs))
@@ -214,7 +211,7 @@ def collect_parameters_kfold_iterative(images, n_splits=5):
                 }
             )
 
-        # avg results for folds
+        #avg folds
         avg_train_result = {
             key: np.mean([res[key] for res in fold_train_results], axis=0) for key in fold_train_results[0]
         }
@@ -227,8 +224,7 @@ def collect_parameters_kfold_iterative(images, n_splits=5):
 
     return num_images_list, train_results, test_results
 
-
-num_images_list, train_results, test_results = collect_parameters_kfold_iterative(all_images, n_splits=5)
+num_images_list, train_results, test_results = collect_parameters_kfold_iterative(all_images, n_splits=2)
 
 fx_train = [result["fx"] for result in train_results]
 fy_train = [result["fy"] for result in train_results]
@@ -248,8 +244,8 @@ tvecs_test = [result["tvecs"] for result in test_results]
 dist_train = [result["dist"] for result in train_results]
 dist_test = [result["dist"] for result in test_results]
 
-#plot
-fig, axs = plt.subplots(9, 1, figsize=(14, 54))
+# Plotting
+fig, axs = plt.subplots(11, 1, figsize=(14, 66))  # Adjusted to 11 subplots
 
 axs[0].plot(num_images_list, fx_train, 'o-', label='fx Train')
 axs[0].plot(num_images_list, fx_test, 'x--', label='fx Test')
@@ -294,7 +290,7 @@ axs[5].set_title("Learning Curves for Translation Vectors")
 axs[5].legend()
 
 dist_labels = ["k1", "k2", "p1", "p2", "k3"]
-for i in range(5):
+for i in range(len(dist_labels)):
     axs[6 + i].plot(num_images_list, [d[i] for d in dist_train], 'o-', label=f'{dist_labels[i]} Train')
     axs[6 + i].plot(num_images_list, [d[i] for d in dist_test], 'x--', label=f'{dist_labels[i]} Test')
     axs[6 + i].set_xlabel("Number of Training Images")
