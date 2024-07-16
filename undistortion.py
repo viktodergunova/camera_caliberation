@@ -178,70 +178,95 @@ def calculate_reprojection_error(objpoints, imgpoints, cameraMatrix, dist, rvecs
         errors.append(error)
     return mean_error / len(objpoints), errors
 
+#least square 
+def fit_line_to_points(points):
+    points = np.array(points, dtype=np.float32).reshape(-1, 2)
+    line_parameters = cv.fitLine(points, cv.DIST_L2, 0, 0.01, 0.01)
+    vx, vy, x0, y0 = line_parameters.flatten()
+    return vx, vy, x0, y0 #vektorrchtungen, punkte auf linie
 
-def measure_checkerboard_straightness(corners, chessboardSize):
-    horizontal_angles = []
-    vertical_angles = []
+#enkrechte distanz für jeden punkt = distanz ist diffrent zwischen aktuellen eckpunkt und nächstgelegenen punkt auf linie (normiert/länge linienvektor)
+def calculate_line_distances(points, vx, vy, x0, y0):
+    distances = []
+    for point in points:
+        dx = point[0] - x0  
+        dy = point[1] - y0  
+        distance = abs(dy * vx - dx * vy) / np.sqrt(vx**2 + vy**2)
+        distances.append(distance)
+    return np.mean(distances), np.std(distances)
 
-    # horizontal lines
+
+#misst gradlinigkeit = perfekte linie vs aktuelle linie 
+def measure_checkerboard_line_straightness(corners, chessboardSize):
+    horizontal_std_iter = []
+    vertical_std_iter = []
     for i in range(chessboardSize[1]):
-        for j in range(chessboardSize[0] - 1):
-            pt1 = corners[i * chessboardSize[0] + j][0]
-            pt2 = corners[i * chessboardSize[0] + j + 1][0]
-            angle = np.arctan2(pt2[1] - pt1[1], pt2[0] - pt1[0]) * 180 / np.pi
-            horizontal_angles.append(angle)
-
-    # vertical lines
+        row_points = corners[i * chessboardSize[0]:(i + 1) * chessboardSize[0]].reshape(-1, 2)
+        vx, vy, x0, y0 = fit_line_to_points(row_points)
+        mean_dist, std_dist = calculate_line_distances(row_points, vx, vy, x0, y0)
+        horizontal_std_iter.append(mean_dist)
+        vertical_std_iter.append(std_dist)
+        
     for i in range(chessboardSize[0]):
-        for j in range(chessboardSize[1] - 1):
-            pt1 = corners[j * chessboardSize[0] + i][0]
-            pt2 = corners[(j + 1) * chessboardSize[0] + i][0]
-            angle = np.arctan2(pt2[1] - pt1[1], pt2[0] - pt1[0]) * 180 / np.pi
-            vertical_angles.append(angle)
+        col_points = corners[i::chessboardSize[0]].reshape(-1, 2)
+        vx, vy, x0, y0 = fit_line_to_points(col_points)
+        mean_dist, std_dist = calculate_line_distances(col_points, vx, vy, x0, y0)
+        horizontal_std_iter.append(mean_dist)
+        vertical_std_iter.append(std_dist)
+        
+    return np.mean(horizontal_std_iter), np.mean(vertical_std_iter)
 
-    return np.std(horizontal_angles), np.std(vertical_angles)
-
-
-def visualize_checkerboard_lines(image, corners, chessboard_size):
+def visualize_checkerboard_lines(image, corners_pre, chessboard_size, corners_post=None, title=""):
     img = image.copy()
-    if corners is not None:
-        for i in range(corners.shape[0]):
-            cv.circle(img, tuple(corners[i, 0].astype(int)), 5, (0, 255, 0), -1)
+    # Define color and line thickness for better visualization
+    line_thickness_pre = 2
+    line_thickness_post = 4
+    colors_pre = (255, 0, 0)  # Red color for pre-calibration lines
+    colors_post = (0, 255, 0)  # Green color for post-calibration lines
 
-        # Draw lines
+    def draw_lines(corners, color, thickness):
         for row in range(chessboard_size[1]):
             for col in range(chessboard_size[0] - 1):
                 idx = row * chessboard_size[0] + col
                 start = tuple(corners[idx, 0].astype(int))
                 end = tuple(corners[idx + 1, 0].astype(int))
-                cv.line(img, start, end, (255, 0, 0), 2)
-
+                cv.line(img, start, end, color, thickness)
+        
         for col in range(chessboard_size[0]):
             for row in range(chessboard_size[1] - 1):
                 idx = row * chessboard_size[0] + col
                 start = tuple(corners[idx, 0].astype(int))
                 end = tuple(corners[idx + chessboard_size[0], 0].astype(int))
-                cv.line(img, start, end, (0, 0, 255), 2)
+                cv.line(img, start, end, color, thickness)
+
+    # Draw pre-calibration lines
+    if corners_pre is not None:
+        draw_lines(corners_pre, colors_pre, line_thickness_pre)
+
+    # Draw post-calibration lines
+    if corners_post is not None:
+        draw_lines(corners_post, colors_post, line_thickness_post)
 
     plt.figure(figsize=(10, 10))
     plt.imshow(cv.cvtColor(img, cv.COLOR_BGR2RGB))
-    plt.title("Checkerboard Lines")
+    plt.title(title)
     plt.axis("off")
     plt.show()
 
 
-all_images = glob.glob("./data/rechts_8bit_jpg_DS_0.5/*.jpg")
+all_images = glob.glob("./data/links_8bit_jpg_DS_0.5/*.jpg")
 #all_images = glob.glob("./data/rechts_8bit_jpg/*.jpg")
 
 # checkerboard straightness before any calibration
-img = cv.imread(all_images[70])
+img = cv.imread(all_images[15])
 gray = cv.cvtColor(img, cv.COLOR_BGR2GRAY)
-ret, corners = cv.findChessboardCorners(gray, chessboardSize, None)
+ret, before_calib_corners = cv.findChessboardCorners(gray, chessboardSize, None)
 if ret:
-    corners2 = cv.cornerSubPix(gray, corners, (11, 11), (-1, -1), criteria)
-    h_std, v_std = measure_checkerboard_straightness(corners2, chessboardSize)
-    print(f"Before Calibration - Horizontal StdDev: {h_std:.4f}, Vertical StdDev: {v_std:.4f}")
-    visualize_checkerboard_lines(img, corners2, chessboardSize)
+    before_calib_corners2 = cv.cornerSubPix(gray, before_calib_corners, (11, 11), (-1, -1), criteria)
+    mean_dist, std_dist = measure_checkerboard_line_straightness(before_calib_corners2, chessboardSize)
+    print(f"Horizontal StdDev: {mean_dist:.4f}, Vertical StdDev: {std_dist:.4f}")
+    visualize_checkerboard_lines(img, before_calib_corners2, chessboardSize, title="Checkerboard Before Calibration")
+
 else:
     print("Checkerboard corners could not be detected.")
 
@@ -250,21 +275,29 @@ ret, cameraMatrix, dist, rvecs, tvecs, objpoints, imgpoints = calibrate_camera(a
 initial_rpe, initial_rpe_errors = calculate_reprojection_error(objpoints, imgpoints, cameraMatrix, dist, rvecs, tvecs)
 
 # checkerboard straightness after initial calibration
-if ret:
-    imgpoints = [cv.cornerSubPix(gray, corners, (11, 11), (-1, -1), criteria) for corners in imgpoints]
-    horizontal_std, vertical_std = measure_checkerboard_straightness(imgpoints[0], chessboardSize)
-    print(f"Initial Calibration - Horizontal StdDev: {horizontal_std:.4f}, Vertical StdDev: {vertical_std:.4f}")
+if ret and before_calib_corners2 is not None:
+    undistorted_img_it1, _ = undistort_image(img, cameraMatrix, dist)
+    gray_undistorted_it1 = cv.cvtColor(undistorted_img_it1, cv.COLOR_BGR2GRAY)
+    ret, after_calib_corners = cv.findChessboardCorners(gray_undistorted_it1, chessboardSize, None)
+    if ret:
+        after_calib_corners2 = cv.cornerSubPix(gray_undistorted_it1, after_calib_corners, (11, 11), (-1, -1), criteria)
+        mean_dist, std_dist = measure_checkerboard_line_straightness(after_calib_corners2, chessboardSize)
+        print(f"Horizontal StdDev: {mean_dist:.4f}, Vertical StdDev: {std_dist:.4f}")
+        visualize_checkerboard_lines(undistorted_img_it1, after_calib_corners2, chessboardSize,  title="Checkerboard Before and After Initial Calibration")
+       
+else:
+    print("Checkerboard corners could not be detected after initial calibration.")
 
-print(f"Initial Calibration Parameters:\nCamera Matrix:\n{cameraMatrix}\nDistortion Coefficients:\n{dist}\n")
 
 # iterative undistortion and recalibration
-num_iterations = 10
+num_iterations = 30
 dist_coeffs_all = [dist.flatten()]
 rpe_all = [initial_rpe]
 rpe_errors_all = [initial_rpe_errors]
 fx_all, fy_all, cx_all, cy_all = [cameraMatrix[0, 0]], [cameraMatrix[1, 1]], [cameraMatrix[0, 2]], [cameraMatrix[1, 2]]
 rvecs_all, tvecs_all = [np.mean(rvecs, axis=0).flatten()], [np.mean(tvecs, axis=0).flatten()]
-horizontal_std_all, vertical_std_all = [horizontal_std], [vertical_std]
+horizontal_std_all = []
+vertical_std_all = []
 
 undistorted_images = [cv.imread(image) for image in all_images]
 
@@ -290,52 +323,41 @@ for iteration in range(1, num_iterations + 1):
     vertical_std_iter = []
     for corners in imgpoints:
         if corners is not None:
-            h_std, v_std = measure_checkerboard_straightness(corners, chessboardSize)
-            horizontal_std_iter.append(h_std)
-            vertical_std_iter.append(v_std)
+            corners = corners.reshape(-1, 2)
+            mean_dist, std_dist = measure_checkerboard_line_straightness(corners, chessboardSize)
+            horizontal_std_iter.append(mean_dist)
+            vertical_std_iter.append(std_dist)
+
     horizontal_std_all.append(np.mean(horizontal_std_iter))
     vertical_std_all.append(np.mean(vertical_std_iter))
 
-    print(f"Re-Calibration Parameters (Iteration {iteration}):")
-    print(f"Camera Matrix:\n{cameraMatrix}\nDistortion Coefficients:\n{dist}\n")
-
-
-rvecs_all = np.vstack(rvecs_all)
-tvecs_all = np.vstack(tvecs_all)
-
-print(f"Shape of rvecs_all: {rvecs_all.shape}")
-print(f"Shape of tvecs_all: {tvecs_all.shape}")
-
-# StdDev Checkerboard Straightness
-print(
-    f"Initial Calibration - Horizontal StdDev: {horizontal_std_all[0]:.4f}, Vertical StdDev: {vertical_std_all[0]:.4f}"
-)
-for iteration in range(1, num_iterations + 1):
+for i in range(num_iterations):
     print(
-        f"Iteration {iteration} - Horizontal StdDev: {horizontal_std_all[iteration]:.4f}, Vertical StdDev: {vertical_std_all[iteration]:.4f}"
+        f"Iteration {i+1} - Horizontal StdDev: {horizontal_std_all[i]:.4f}, Vertical StdDev: {vertical_std_all[i]:.4f}"
     )
-
 
 labels = ["k1", "k2", "p1", "p2", "k3"]
 x = np.arange(len(labels))
 width = 0.1
 
-fig, ax = plt.subplots(figsize=(12, 6))
-for i in range(num_iterations + 1):
-    ax.bar(x + i * width, dist_coeffs_all[i], width, label=f"Iteration {i}")
 
-ax.set_ylabel("Values")
-ax.set_title("Distortion Coefficients Across Iterations")
-ax.set_xticks(x + width * (num_iterations / 2))
-ax.set_xticklabels(labels)
-ax.legend()
+fig, ax = plt.subplots(figsize=(12, 6))
+iterations = np.arange(num_iterations + 1)
+width = 0.1
+
+for idx, label in enumerate(labels):
+   coefficients = [iteration[idx] for iteration in dist_coeffs_all]  # Extract each coefficient for all iterations
+   ax.bar(iterations + idx * width, coefficients, width=0.1, label=label)
+
+
+ax.set_xlabel('Iteration')
+ax.set_ylabel('Values')
+ax.set_title('Distortion Coefficients Across Iterations')
+ax.set_xticks(iterations + width * (len(labels) - 1) / 2)
+ax.set_xticklabels(iterations)
+ax.legend(title="Parameters", bbox_to_anchor=(1.05, 1), loc='upper left')
 plt.show()
 
-
-fig, ax = plt.subplots(figsize=(12, 6))
-width = 0.1
-intrinsic_labels = ["fx", "fy", "cx", "cy"]
-iterations = np.arange(num_iterations + 1)
 
 ax.bar(iterations - 1.5 * width, fx_all, width, label="fx")
 ax.bar(iterations - 0.5 * width, fy_all, width, label="fy")
@@ -349,19 +371,21 @@ ax.set_xticklabels([f"Iteration {i}" for i in range(num_iterations + 1)])
 ax.legend()
 plt.show()
 
-# Plot Extrinsic Parameters
 fig, ax = plt.subplots(figsize=(12, 6))
 width = 0.1
+rvecs_all = np.array(rvecs_all)
+tvecs_all = np.array(tvecs_all)
+extrinsic_params = [rvecs_all[:, 0], rvecs_all[:, 1], rvecs_all[:, 2]]
 extrinsic_labels = ["rvec1", "rvec2", "rvec3"]
 extrinsic_params = [rvecs_all[:, 0], rvecs_all[:, 1], rvecs_all[:, 2]]
 
-ax.bar(iterations - 1.5 * width, rvecs_all[:, 0], width, label="rvec1")
-ax.bar(iterations - 0.5 * width, rvecs_all[:, 1], width, label="rvec2")
-ax.bar(iterations + 0.5 * width, rvecs_all[:, 2], width, label="rvec3")
+ax.bar(np.arange(num_iterations + 1) - 1.5 * width, rvecs_all[:, 0], width, label="rvec1")
+ax.bar(np.arange(num_iterations + 1) - 0.5 * width, rvecs_all[:, 1], width, label="rvec2")
+ax.bar(np.arange(num_iterations + 1) + 0.5 * width, rvecs_all[:, 2], width, label="rvec3")
 
 ax.set_ylabel("Values")
 ax.set_title("Rotation Vectors Across Iterations")
-ax.set_xticks(iterations)
+ax.set_xticks(np.arange(num_iterations + 1))
 ax.set_xticklabels([f"Iteration {i}" for i in range(num_iterations + 1)])
 ax.legend()
 plt.show()
@@ -391,10 +415,19 @@ ax.legend()
 plt.show()
 
 # checkerboard lines after initial undistortion
-ret, corners = cv.findChessboardCorners(gray, chessboardSize, None)
-if ret:
-    corners2 = cv.cornerSubPix(gray, corners, (11, 11), (-1, -1), criteria)
-    undistorted_img, _ = undistort_image(img, cameraMatrix, dist)
-    visualize_checkerboard_lines(undistorted_img, corners2, chessboardSize)
-else:
-    print("Checkerboard corners could not be detected.")
+
+vx, vy = 1, 0
+theta_rad = np.arctan2(vy, vx)
+theta_deg = np.degrees(theta_rad)
+line_x = np.array([0, 10])
+line_y = np.tan(theta_rad) * (line_x - 0)  # y = tan(theta) * (x - x0) + y0, hier x0 = 0, y0 = 0
+
+plt.figure()
+plt.plot(line_x, line_y, label=f'Linie: {theta_deg:.2f} Grad')
+plt.xlim(0, 10)
+plt.ylim(-10, 10)
+plt.axhline(0, color='gray', lw=0.5)
+plt.axvline(0, color='gray', lw=0.5)
+plt.gca().set_aspect('equal', adjustable='box')
+plt.legend()
+plt.show()
